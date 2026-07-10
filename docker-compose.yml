@@ -1,0 +1,27 @@
+# One command brings up the whole stack:  docker compose up
+services:
+  db:
+    image: postgres:16
+    env_file: .env
+    volumes:
+      # Named volume => data survives `docker compose down` and restarts.
+      - pgdata:/var/lib/postgresql/data
+      # Schema runs once, on first init of an empty data dir.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
