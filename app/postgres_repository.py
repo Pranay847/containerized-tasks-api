@@ -7,6 +7,8 @@ disk (a Docker named volume), so they survive an app + container restart.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import psycopg2
 import psycopg2.extras
 
@@ -20,6 +22,8 @@ class PostgresTaskRepository(TaskRepository):
     def _connect(self):
         # New connection per call keeps this simple and restart-safe; a real
         # service would use a pool. autocommit so each write is durable.
+        # Callers wrap this in closing(): psycopg2's own `with conn:` only
+        # ends the transaction and would leave the connection open.
         conn = psycopg2.connect(self._dsn)
         conn.autocommit = True
         return conn
@@ -29,7 +33,7 @@ class PostgresTaskRepository(TaskRepository):
         return Task(id=row["id"], title=row["title"], done=row["done"])
 
     def add(self, title: str) -> Task:
-        with self._connect() as conn, conn.cursor(
+        with closing(self._connect()) as conn, conn.cursor(
             cursor_factory=psycopg2.extras.RealDictCursor
         ) as cur:
             cur.execute(
@@ -40,14 +44,14 @@ class PostgresTaskRepository(TaskRepository):
             return self._row_to_task(cur.fetchone())
 
     def list(self) -> list[Task]:
-        with self._connect() as conn, conn.cursor(
+        with closing(self._connect()) as conn, conn.cursor(
             cursor_factory=psycopg2.extras.RealDictCursor
         ) as cur:
             cur.execute("SELECT id, title, done FROM tasks ORDER BY id")
             return [self._row_to_task(r) for r in cur.fetchall()]
 
     def get(self, task_id: int) -> Task | None:
-        with self._connect() as conn, conn.cursor(
+        with closing(self._connect()) as conn, conn.cursor(
             cursor_factory=psycopg2.extras.RealDictCursor
         ) as cur:
             cur.execute(
@@ -57,7 +61,7 @@ class PostgresTaskRepository(TaskRepository):
             return self._row_to_task(row) if row else None
 
     def set_done(self, task_id: int, done: bool) -> Task | None:
-        with self._connect() as conn, conn.cursor(
+        with closing(self._connect()) as conn, conn.cursor(
             cursor_factory=psycopg2.extras.RealDictCursor
         ) as cur:
             cur.execute(
@@ -69,6 +73,6 @@ class PostgresTaskRepository(TaskRepository):
             return self._row_to_task(row) if row else None
 
     def delete(self, task_id: int) -> bool:
-        with self._connect() as conn, conn.cursor() as cur:
+        with closing(self._connect()) as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
             return cur.rowcount > 0
